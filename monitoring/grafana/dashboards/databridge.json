@@ -1,0 +1,138 @@
+{
+ "title": "DataBridge API",
+ "uid": "databridge-api",
+ "tags": [
+  "databridge"
+ ],
+ "refresh": "30s",
+ "schemaVersion": 39,
+ "panels": [
+  {
+   "id": 1,
+   "title": "Requêtes / seconde",
+   "type": "timeseries",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(http_requests_total{job=\"databridge-api\"}[1m])) by (handler)",
+     "legendFormat": "{{handler}}"
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "title": "Taux d'erreurs HTTP (4xx / 5xx)",
+   "type": "timeseries",
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(http_requests_total{job=\"databridge-api\", status=~\"4..\"}[1m]))",
+     "legendFormat": "4xx"
+    },
+    {
+     "expr": "sum(rate(http_requests_total{job=\"databridge-api\", status=~\"5..\"}[1m]))",
+     "legendFormat": "5xx"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "title": "Latence p95 par endpoint (s)",
+   "type": "timeseries",
+   "gridPos": {
+    "x": 0,
+    "y": 8,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"databridge-api\"}[5m])) by (handler, le))",
+     "legendFormat": "p95 {{handler}}"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "title": "Jobs de prédiction en cours",
+   "type": "stat",
+   "gridPos": {
+    "x": 12,
+    "y": 8,
+    "w": 6,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum(databridge_prediction_jobs_running) or vector(0)",
+     "legendFormat": "En cours"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "title": "Jobs de prédiction — statuts cumulés",
+   "type": "timeseries",
+   "gridPos": {
+    "x": 18,
+    "y": 8,
+    "w": 6,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum(databridge_prediction_jobs_completed_total) by (model)",
+     "legendFormat": "✓ {{model}}"
+    },
+    {
+     "expr": "sum(databridge_prediction_jobs_failed_total) by (model)",
+     "legendFormat": "✗ {{model}}"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "title": "Jobs de synchronisation Webresto — statuts",
+   "type": "timeseries",
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "round(sum(increase(databridge_sync_job_results_total[15m])) by (sync_job, status))",
+     "legendFormat": "{{sync_job}} ({{status}})"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "title": "Jobs de synchronisation dégradés (15 min)",
+   "type": "stat",
+   "gridPos": {
+    "x": 12,
+    "y": 16,
+    "w": 6,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "round(sum(increase(databridge_sync_job_results_total{status!=\"complete_success\"}[15m])) or vector(0))",
+     "legendFormat": "dégradés"
+    }
+   ]
+  }
+ ]
+}

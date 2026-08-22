@@ -1,0 +1,9 @@
+steps:
+  test:
+    image: python:3.12-slim
+    commands:
+      - apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+      - pip install --no-cache-dir -r requirements-api.txt pytest httpx pytest-cov
+      - pytest API/tests/ prediction_passages/tests/ data_process/tests/ -v --cov=API --cov=prediction_passages/src --cov=data_process --cov-report=term-missing
+    when:
+      - event: [push, tag]

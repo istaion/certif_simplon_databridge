@@ -1,0 +1,8 @@
+apiVersion: 1
+
+providers:
+  - name: databridge
+    folder: DataBridge
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

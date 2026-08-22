@@ -1,0 +1,105 @@
+- name: Deploy Databridge
+  hosts: proxy
+  become: true
+  become_user: root
+
+  vars_files:
+    - vault.yml
+
+  pre_tasks:
+    - debug:
+        msg: "Starting deployment of Databridge service..."
+    - name: Set ci_pipeline_event & tag variables
+      ansible.builtin.set_fact:
+        ci_pipeline_event: "{{ lookup('env', 'CI_PIPELINE_EVENT') }}"
+        ci_commit_tag: "{{ lookup('env', 'CI_COMMIT_TAG') }}"
+    - name: Check if the event is a release or tag
+      ansible.builtin.debug:
+        msg: "Event is {{ ci_pipeline_event }}.\nTag is {{ ci_commit_tag }}."
+    - name: Fail if event not tag nor release
+      ansible.builtin.fail:
+        msg: "This playbook should only be run on a release or tag event."
+      when: not (ci_pipeline_event in ['release', 'tag'])
+    - name: Fail if no tag was provided
+      ansible.builtin.fail:
+        msg: "No tag provided."
+      when: ci_commit_tag | length == 0
+    - name: Fail if provided tag is not a valid semantic version
+      ansible.builtin.fail:
+        msg: "Provided tag is not a valid semantic version."
+      when: not (ci_commit_tag | regex_search('^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:[a-zA-Z0-9]|[-_])+(?:\\.(?:[a-zA-Z0-9]|[-_])+)*))?(?:\\+([a-zA-Z0-9]|[-_])+(?:\\.(?:[a-zA-Z0-9]|[-_])+)*)?$'))
+    - name: Set the databridge_version from tag variable
+      ansible.builtin.set_fact:
+        databridge_version: "{{ ci_commit_tag }}"
+
+    - name: Fail if registry variables are not defined
+      ansible.builtin.fail:
+        msg: "Registry variables are not defined."
+      when: registry_hostname is not defined or registry_hostname|length == 0 
+              or registry_username is not defined or registry_username|length == 0 
+              or registry_password is not defined or registry_password|length == 0 
+
+    - name: Login to registry
+      ansible.builtin.shell:
+        cmd: "docker login '{{ registry_hostname }}' --username '{{ registry_username }}' --password '{{ registry_password }}'"
+      no_log: true
+      register: login_result
+      failed_when: login_result.rc != 0
+      changed_when: false
+
+    - name: Verify the image tag exists in the registry
+      ansible.builtin.command:
+        cmd: "docker manifest inspect {{ registry_hostname }}/internal/databridge:{{ databridge_version }}"
+      register: manifest_check
+      failed_when: manifest_check.rc != 0
+      changed_when: false
+
+  tasks:
+
+    - name: Check current deployed version
+      ansible.builtin.command:
+        cmd: "grep -oP 'DATABRIDGE_VERSION=\\K.*' {{ services_local_storage_folder }}/.env"
+      register: current_version
+      changed_when: false
+      failed_when: false  # file may not exist on first run
+
+    - name: Write databridge version to .env file
+      ansible.builtin.copy:
+        dest: "{{ services_local_storage_folder }}/.env"
+        content: "DATABRIDGE_VERSION={{ databridge_version }}\n"
+        mode: "0600"
+        owner: ianord_docker
+        group: ianord_docker
+      when: current_version.stdout is not defined or current_version.stdout != databridge_version
+      register: env_updated
+
+    - name: Pull latest databridge image
+      community.docker.docker_compose_v2:
+        project_src: "{{ services_local_storage_folder }}"
+        services:
+          - databridge
+        pull: always
+        state: present
+        env_files :
+          - "{{ services_local_storage_folder }}/.env"
+      register: pull_result
+
+    - name: Recreate databridge service if a new image was pulled
+      community.docker.docker_compose_v2:
+        project_src: "{{ services_local_storage_folder }}"
+        services:
+          - databridge
+        state: present
+        recreate: always
+        env_files:
+          - "{{ services_local_storage_folder }}/.env"
+      when: pull_result.changed or env_updated.changed
+      register: deploy_result
+
+    - name: Show deployment result
+      ansible.builtin.debug:
+        msg: "Databridge deployment status: {{ deploy_result.changed | ternary('updated', 'already up to date') }}"
+
+    - name: Logout from registry
+      ansible.builtin.shell:
+        cmd: "docker logout {{ registry_hostname }}"

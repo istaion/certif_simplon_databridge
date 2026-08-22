@@ -1,0 +1,40 @@
+depends_on:
+  - 20-build
+
+steps:
+  deploy_databridge_restart_compose:
+    image: woodpeckerci/plugin-ansible
+    settings:
+      playbook: ./ansible/deploy.yml
+      diff: false
+      inventory: ./ansible/hosts.ini
+      galaxy: ./ansible/requirements.yml
+      syntax_check: false
+      user: ianord
+      private_key:
+        from_secret: support_cicd_ssh_key
+      ssh_common_args: "-o StrictHostKeyChecking=accept-new"
+      vault_password:
+        from_secret: databridge_ansible_vault_password
+    when:
+      - event:
+          include: [release, tag]
+        branch:
+          include: [main]
+
+
+  notify_deploy:
+    image: "sb07qkc1.gra7.container-registry.ovh.net/public/woodpecker-ci-teams-notification:stable"
+    settings:
+      webhook_url:
+        from_secret: teams_webhook_url_supervision_infra
+      buttons: pipeline
+      facts: project,version,message
+      debug: false
+      display_avatar: false
+    when:
+      - status: [success, failure]
+        event:
+          include: [release, tag]
+    depends_on:
+      - deploy_databridge_restart_compose

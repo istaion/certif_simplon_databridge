@@ -1,0 +1,63 @@
+groups:
+  - name: databridge-api
+    rules:
+      - alert: HighHttpErrorRate
+        expr: >
+          sum(rate(http_requests_total{job="databridge-api", status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{job="databridge-api"}[5m]))
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Taux d'erreurs 5xx élevé sur l'API DataBridge"
+          description: >
+            Plus de 5% des requêtes sur les 5 dernières minutes se terminent en erreur serveur (5xx).
+
+      - alert: HighRequestLatencyP95
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="databridge-api"}[5m])) by (handler, le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latence p95 élevée sur {{ $labels.handler }}"
+          description: >
+            La latence au 95e centile dépasse 2s sur la route {{ $labels.handler }} depuis 5 minutes.
+
+      - alert: PredictionJobFailures
+        expr: increase(databridge_prediction_jobs_failed_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Échec d'un job de prédiction ({{ $labels.model }})"
+          description: >
+            Au moins un job de prédiction pour le modèle {{ $labels.model }} a échoué au cours
+            des 15 dernières minutes.
+
+      - alert: DataBridgeApiDown
+        expr: up{job="databridge-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "L'API DataBridge ne répond plus"
+          description: "Prometheus ne parvient plus à scraper api:8000/metrics depuis 1 minute."
+
+      - alert: SyncJobDegraded
+        expr: increase(databridge_sync_job_results_total{status!="complete_success"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job de synchronisation {{ $labels.sync_job }} en {{ $labels.status }}"
+          description: >
+            Le job de synchronisation Webresto {{ $labels.sync_job }} a terminé avec le statut
+            {{ $labels.status }} (attendu : complete_success) au cours des 15 dernières
+            minutes -- un contrat de la gateway amont a pu changer sans prévenir (cf.
+            incident bankdetail). Ce cas répond en HTTP 200 : invisible dans le taux
+            d'erreurs HTTP, seule cette métrique le détecte.
